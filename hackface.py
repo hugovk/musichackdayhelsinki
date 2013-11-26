@@ -18,6 +18,7 @@ import pyen
 import pylast
 
 from mylast import * # Contains API keys and secrets
+# Imports pylast. Need my modified version with added limit params
 
 # Parameters for Haar detection. From the API:
 # The default parameters (scale_factor=2, min_neighbors=3, flags=0) are tuned for accurate yet slow object detection. For a faster operation on real video images the settings are:
@@ -200,28 +201,29 @@ def detect_and_save(input_name, cascade, outdir, duplicates=0):
         # cv.SaveImage(outfile, img)
     return count
 
-
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Create a composite face from your most listened bands and artists on Last.fm.', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-u', '--username', default='hvk',
-        help='Last.fm username')
+    parser.add_argument('-u', '--username', 
+        help="Last.fm username (don't use tag")
+    parser.add_argument('-t', '--tag', 
+        help="Last.fm tag (don't use username)")
+
     parser.add_argument('-os', '--outsize', help='Output image size', default="350,450")
     parser.add_argument('-p', '--period', default='overall', choices=('overall', '7day', '1month', '3month', '6month', '12month'),
-        help="The time period over which to retrieve top artists for.")
+        help="The time period over which to retrieve top artists for (for username).")
     parser.add_argument('-imgsrc', '--imagesource', default='echonest', choices=('lastfm', 'echonest'),
         help="Data source for images")
     parser.add_argument('-n', '--number', type=int, default=100,
         help="Limit to this number.")
     parser.add_argument('-w', '--weighted', action='store_true',
-        help="Weigh images by number of plays (warning: slow)")
+        help="Weigh images by number of plays (for username. Warning: slow)")
 
     # OpenCV
     parser.add_argument('-c', '--cascade', 
 #         default='D:\\temp\\opencv\\data\\haarcascades\\haarcascade_frontalface_alt.xml',
         default='/usr/local/Cellar/opencv/2.4.5/share/OpenCV/haarcascades/haarcascade_frontalface_alt.xml',
         help='Haar cascade file')
-    parser.add_argument('-t', '--tight_crop', action='store_true',
+    parser.add_argument('-tc', '--tight_crop', action='store_true',
         help='Crop image tight around detected feature (otherwise a margin is added)')
     parser.add_argument('-s', '--show', action='store_true',
         help='Show detected image with box')
@@ -231,21 +233,34 @@ if __name__ == '__main__':
     except: None
     print args
 
-    outfile = "hackface_" + args.username + "_top" + str(args.number)
+    if not args.username and not args.tag:
+        sys.exit("Please specify either a username or tag")
+
+    if args.username:
+        unique = args.username
+    else:
+        unique = args.tag
+        args.weighted = None # Make sure not set
+    outfile = "hackface_" + unique + "_top" + str(args.number)
     if os.path.exists(outfile):
         sys.exit(Outfile, "already exists, exiting")
+#     outdir = os.path.join("/tmp/hackface/", unique)
+    outdir = "/tmp/hackface/cache/"
 
-    outdir = os.path.join("/tmp/hackface/", args.username)
-    facedir = os.path.join(outdir, "faces")
+    facedir = os.path.join(outdir, "faces", unique)
     print outdir
 #     remove_dir(outdir)
     remove_dir(facedir)
     create_dirs(outdir)
     create_dirs(facedir)
 
-    user = lastfm_network.get_user(args.username)
     print "Get top artists from Last.fm"
-    artists = user.get_top_artists(period=args.period, limit=args.number)
+    if args.username:
+        user = lastfm_network.get_user(args.username)
+        artists = user.get_top_artists(limit=args.number, period=args.period)
+    else:
+        tag = lastfm_network.get_tag(args.tag)
+        artists = tag.get_top_artists(limit=args.number)
     if len(artists) == 0:
         sys.exit("No artists found")
 
