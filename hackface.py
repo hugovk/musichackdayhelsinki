@@ -18,7 +18,7 @@ except ImportError: import json
 # https://github.com/hugovk/lastfm-tools/blob/master/mylast.py
 import cv2.cv as cv
 
-from mylast import API_KEY
+API_KEY = "TODO_PUT_YOUR_LAST.FM_API_KEY_HERE"
 
 # Parameters for Haar detection. From the API:
 # The default parameters (scale_factor=2, min_neighbors=3, flags=0) are tuned for accurate yet slow object detection. For a faster operation on real video images the settings are:
@@ -219,9 +219,9 @@ if __name__ == '__main__':
 
     url = "http://ws.audioscrobbler.com/2.0/?&api_key=" + API_KEY + "&format=json&limit=" + str(args.number)
     if args.username:
-        url += "&method=user.gettopartists&user=" + args.username
+        url += "&method=user.gettopartists&user=" + urllib2.quote(args.username)
     else:
-        url += "&method=tag.gettopartists&tag=" + args.tag
+        url += "&method=tag.gettopartists&tag=" + urllib2.quote(args.tag)
 
 
     result = json.load(urllib2.urlopen(url))
@@ -270,12 +270,12 @@ if __name__ == '__main__':
     inspec = os.path.join(facedir, "*.jpg")
     outfile = outfile + ".jpg"
     
-    cmd = "pixelator.py --batch-size auto --inspec \"" + inspec + "\" --normalise " + args.outsize + " --outfile " + outfile
+    cmd = 'pixelator.py --batch-size auto --inspec "' + inspec + '" --normalise ' + args.outsize + ' --outfile "' + outfile + '"'
     print cmd
     os.system(cmd)
 
     # Auto-level to bring out the colours
-    cmd = "convert -auto-level " + outfile + " " + outfile
+    cmd = 'convert -auto-level "' + outfile + '" "' + outfile + '"'
     print cmd
     os.system(cmd)
 
