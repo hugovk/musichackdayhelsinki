@@ -9,16 +9,16 @@ import shutil
 import sys
 import urllib2
 
+try: import simplejson as json
+except ImportError: import json
+
 # Dependencies:
 # imagemagick
 # https://github.com/hugovk/pixel-tools/blob/master/pixelator.py
 # https://github.com/hugovk/lastfm-tools/blob/master/mylast.py
 import cv2.cv as cv
-import pyen
-import pylast
 
-from mylast import * # Contains API keys and secrets
-# Imports pylast. Need my modified version with added limit params
+from mylast import API_KEY
 
 # Parameters for Haar detection. From the API:
 # The default parameters (scale_factor=2, min_neighbors=3, flags=0) are tuned for accurate yet slow object detection. For a faster operation on real video images the settings are:
@@ -31,8 +31,6 @@ haar_scale = 1.2
 min_neighbors = 2
 haar_flags = cv.CV_HAAR_DO_CANNY_PRUNING
 
-
-en = pyen.Pyen(ECHO_NEST_API_KEY)
 
 def remove_dir(dir):
     print "Remove dir:", dir
@@ -47,36 +45,6 @@ def create_dirs(dir):
     import shutil
     if not os.path.isdir(dir):
         os.makedirs(dir)
-
-def artist_image(artist):
-    """
-    Return the URL of an artist's image from Echo Nest or Last.fm
-    """
-    url = None
-
-    if args.imagesource == 'soundcloud':
-        artist = artist.item.get_name()
-        try:
-            response = en.get('artist/images', name=artist)
-#             for image in response['images']:
-#                 print image['url']
-            url = response['images'][0]['url']
-        except (KeyboardInterrupt, SystemExit):
-            raise
-        except:
-            return None
-
-    else: # lastfm
-        try:
-            url = artist.item.get_cover_image()
-        except (KeyboardInterrupt, SystemExit):
-            raise
-        except:
-            return None
-
-    print url
-    return url
-
 
 def download(url, dir):
     file_name = url.split('/')[-1]
@@ -118,7 +86,7 @@ def download(url, dir):
     
     return file_name
 
-def detect_and_save(input_name, cascade, outdir, duplicates=0):
+def detect_and_save(input_name, cascade, outdir):
     count = 0
     img = cv.LoadImage(input_name, 1)
     # Allocate temporary images
@@ -186,11 +154,6 @@ def detect_and_save(input_name, cascade, outdir, duplicates=0):
                 if not os.path.isfile(outfile):
                     print "Save to", outfile
                     cv.SaveImage(outfile, cropped)
-                
-                # Duplicate files if we care about weights
-                for i in range(int(duplicates)):
-                    dupename = outfile + "_d" + str(i) + ".jpg"
-                    shutil.copy2(outfile, dupename)
 
                 count += 1
 
@@ -211,12 +174,8 @@ if __name__ == '__main__':
     parser.add_argument('-os', '--outsize', help='Output image size', default="350,450")
     parser.add_argument('-p', '--period', default='overall', choices=('overall', '7day', '1month', '3month', '6month', '12month'),
         help="The time period over which to retrieve top artists for (for username).")
-    parser.add_argument('-imgsrc', '--imagesource', default='echonest', choices=('lastfm', 'echonest'),
-        help="Data source for images")
     parser.add_argument('-n', '--number', type=int, default=100,
         help="Limit to this number.")
-    parser.add_argument('-w', '--weighted', action='store_true',
-        help="Weigh images by number of plays (for username. Warning: slow)")
 
     # OpenCV
     parser.add_argument('-c', '--cascade', 
@@ -236,11 +195,12 @@ if __name__ == '__main__':
     if not args.username and not args.tag:
         sys.exit("Please specify either a username or tag")
 
+    cascade = cv.Load(args.cascade)
+
     if args.username:
         unique = args.username
     else:
         unique = args.tag
-        args.weighted = None # Make sure not set
     outfile = "hackface_" + unique + "_top" + str(args.number)
     if os.path.exists(outfile):
         sys.exit(Outfile, "already exists, exiting")
@@ -255,21 +215,30 @@ if __name__ == '__main__':
     create_dirs(facedir)
 
     print "Get top artists from Last.fm"
-    if args.username:
-        user = lastfm_network.get_user(args.username)
-        artists = user.get_top_artists(limit=args.number, period=args.period)
-    else:
-        tag = lastfm_network.get_tag(args.tag)
-        artists = tag.get_top_artists(limit=args.number)
-    if len(artists) == 0:
-        sys.exit("No artists found")
-
-    cascade = cv.Load(args.cascade)
-
     total_found = 0
+
+    url = "http://ws.audioscrobbler.com/2.0/?&api_key=" + API_KEY + "&format=json&limit=" + str(args.number)
+    if args.username:
+        url += "&method=user.gettopartists&user=" + args.username
+    else:
+        url += "&method=tag.gettopartists&tag=" + args.tag
+
+
+    result = json.load(urllib2.urlopen(url))
+    if 'Error' in result:
+        print result['Error']
+
+    url = None
+    artists = result['topartists']['artist']
     for i, artist in enumerate(artists):
-        print i, artist.item.get_name(), artist.weight
-        url = artist_image(artist)
+        print i, artist['name']
+        images = artist['image']
+        for image in images:
+            if image['size'] == "mega":
+                url = image["#text"]
+                print url
+                break
+        
         if not url:
             continue
 
@@ -285,10 +254,7 @@ if __name__ == '__main__':
             cv.NamedWindow("result", 1)
 
         try:
-            if args.weighted:
-                total_found += detect_and_save(filename, cascade, facedir, int(artist.weight))
-            else:
-                total_found += detect_and_save(filename, cascade, facedir)
+            total_found += detect_and_save(filename, cascade, facedir)
         except Exception,e:
             print os.getcwd()
             print "Cannot detect:", file
@@ -302,8 +268,6 @@ if __name__ == '__main__':
 
     print "Total faces found:", total_found
     inspec = os.path.join(facedir, "*.jpg")
-    if args.weighted:
-        outfile = outfile + "_weighted"
     outfile = outfile + ".jpg"
     
     cmd = "pixelator.py --batch-size auto --inspec \"" + inspec + "\" --normalise " + args.outsize + " --outfile " + outfile
@@ -314,7 +278,5 @@ if __name__ == '__main__':
     cmd = "convert -auto-level " + outfile + " " + outfile
     print cmd
     os.system(cmd)
-
-
 
 # End of file
