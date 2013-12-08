@@ -52,6 +52,9 @@ def download(url, dir):
     print file_name
 
     if os.path.exists(file_name):
+        if file_name.lower().endswith(".gif"):
+            # Should have been converted when downloaded earlier
+            file_name = file_name + ".png"
         print "File already exists, skipping:", file_name
         return file_name
     
@@ -195,17 +198,17 @@ if __name__ == '__main__':
     if not args.username and not args.tag:
         sys.exit("Please specify either a username or tag")
 
-    cascade = cv.Load(args.cascade)
-
     if args.username:
         unique = args.username
     else:
         unique = args.tag
-    outfile = "hackface_" + unique + "_top" + str(args.number)
+    outfile = "hackface_" + unique + "_top" + str(args.number) + ".jpg"
     if os.path.exists(outfile):
-        sys.exit(Outfile, "already exists, exiting")
+        sys.exit(outfile + " already exists, exiting")
 #     outdir = os.path.join("/tmp/hackface/", unique)
     outdir = "/tmp/hackface/cache/"
+
+    cascade = cv.Load(args.cascade)
 
     facedir = os.path.join(outdir, "faces", unique)
     print outdir
@@ -268,14 +271,22 @@ if __name__ == '__main__':
 
     print "Total faces found:", total_found
     inspec = os.path.join(facedir, "*.jpg")
-    outfile = outfile + ".jpg"
-    
+
     cmd = 'pixelator.py --batch-size auto --inspec "' + inspec + '" --normalise ' + args.outsize + ' --outfile "' + outfile + '"'
     print cmd
     os.system(cmd)
 
     # Auto-level to bring out the colours
     cmd = 'convert -auto-level "' + outfile + '" "' + outfile + '"'
+    print cmd
+    os.system(cmd)
+
+    # Annotate
+    cmd = 'annotate.py -x --colour white -p 38 "' + outfile + '" -o "' + outfile + '"'
+    if args.tag:
+        cmd += ' "' + args.tag + '"'
+    else:
+        cmd += ' "' + args.user + '"'
     print cmd
     os.system(cmd)
 
